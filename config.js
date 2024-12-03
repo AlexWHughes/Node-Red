@@ -1,77 +1,131 @@
 #!/usr/bin/env bash
-
+source <(curl -s https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
 # Copyright (c) 2021-2024 tteck
 # Author: tteck (tteckster)
 # License: MIT
 # https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 
-source /dev/stdin <<< "$FUNCTIONS_FILE_PATH"
+function header_info {
+clear
+cat <<"EOF"
+    _   __          __        ____           __
+   / | / /___  ____/ /__     / __ \___  ____/ /
+  /  |/ / __ \/ __  / _ \   / /_/ / _ \/ __  / 
+ / /|  / /_/ / /_/ /  __/  / _, _/  __/ /_/ /  
+/_/ |_/\____/\__,_/\___/  /_/ |_|\___/\__,_/   
+ 
+EOF
+}
+header_info
+echo -e "Loading..."
+APP="Node-Red"
+var_disk="4"
+var_cpu="1"
+var_ram="1024"
+var_os="debian"
+var_version="12"
+variables
 color
-verb_ip6
 catch_errors
-setting_up_container
-network_check
-update_os
 
-msg_info "Installing Dependencies"
-$STD apt-get install -y curl
-$STD apt-get install -y sudo
-$STD apt-get install -y mc
-$STD apt-get install -y git
-$STD apt-get install -y ca-certificates
-$STD apt-get install -y gnupg
-msg_ok "Installed Dependencies"
+function default_settings() {
+  CT_TYPE="1"
+  PW=""
+  CT_ID=$NEXTID
+  HN=$NSAPP
+  DISK_SIZE="$var_disk"
+  CORE_COUNT="$var_cpu"
+  RAM_SIZE="$var_ram"
+  BRG="vmbr0"
+  NET="dhcp"
+  GATE=""
+  APT_CACHER=""
+  APT_CACHER_IP=""
+  DISABLEIP6="no"
+  MTU=""
+  SD=""
+  NS=""
+  MAC=""
+  VLAN=""
+  SSH="no"
+  VERB="no"
+  echo_default
+}
 
-msg_info "Setting up Node.js Repository"
-mkdir -p /etc/apt/keyrings
-curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" >/etc/apt/sources.list.d/nodesource.list
-msg_ok "Set up Node.js Repository"
+function update_script() {
+header_info
+check_container_storage
+check_container_resources
+if [[ ! -d /root/.node-red ]]; then msg_error "No ${APP} Installation Found!"; exit; fi
+UPD=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "SUPPORT" --radiolist --cancel-button Exit-Script "Spacebar = Select" 11 58 2 \
+  "1" "Update ${APP}" ON \
+  "2" "Install Themes" OFF \
+  3>&1 1>&2 2>&3)
+if [ "$UPD" == "1" ]; then
+  if [[ "$(node -v | cut -d 'v' -f 2)" == "18."* ]]; then
+    if ! command -v npm >/dev/null 2>&1; then
+      msg_info "Installing NPM"
+      apt-get install -y npm >/dev/null 2>&1
+      msg_ok "Installed NPM"
+    fi
+  fi
+msg_info "Stopping ${APP}"
+systemctl stop nodered
+msg_ok "Stopped ${APP}"
 
-msg_info "Installing Node.js"
-$STD apt-get update
-$STD apt-get install -y nodejs
-msg_ok "Installed Node.js"
+msg_info "Updating ${APP}"
+npm install -g --unsafe-perm node-red &>/dev/null
+msg_ok "Updated ${APP}"
 
-msg_info "Installing Node-Red"
-$STD npm install -g --unsafe-perm node-red
-echo "journalctl -f -n 100 -u nodered -o cat" >/usr/bin/node-red-log
-chmod +x /usr/bin/node-red-log
-echo "systemctl stop nodered" >/usr/bin/node-red-stop
-chmod +x /usr/bin/node-red-stop
-echo "systemctl start nodered" >/usr/bin/node-red-start
-chmod +x /usr/bin/node-red-start
-echo "systemctl restart nodered" >/usr/bin/node-red-restart
-chmod +x /usr/bin/node-red-restart
-msg_ok "Installed Node-Red"
+msg_info "Starting ${APP}"
+systemctl start nodered
+msg_ok "Started ${APP}"
+msg_ok "Update Successful"
+exit
+fi
+if [ "$UPD" == "2" ]; then
+THEME=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "NODE-RED THEMES" --radiolist --cancel-button Exit-Script "Choose Theme" 15 58 6 \
+    "aurora" "" OFF \
+    "cobalt2" "" OFF \
+    "dark" "" OFF \
+    "dracula" "" OFF \
+    "espresso-libre" "" OFF \
+    "github-dark" "" OFF \
+    "github-dark-default" "" OFF \
+    "github-dark-dimmed" "" OFF \
+    "midnight-red" "" ON \
+    "monoindustrial" "" OFF \
+    "monokai" "" OFF \
+    "monokai-dimmed" "" OFF \
+    "noctis" "" OFF \
+    "oceanic-next" "" OFF \
+    "oled" "" OFF \
+    "one-dark-pro" "" OFF \
+    "one-dark-pro-darker" "" OFF \
+    "solarized-dark" "" OFF \
+    "solarized-light" "" OFF \
+    "tokyo-night" "" OFF \
+    "tokyo-night-light" "" OFF \
+    "tokyo-night-storm" "" OFF \
+    "totallyinformation" "" OFF \
+    "zenburn" "" OFF \
+    3>&1 1>&2 2>&3)
+header_info
+msg_info "Installing ${THEME} Theme"    
+cd /root/.node-red
+sed -i 's|// theme: ".*",|theme: "",|g' /root/.node-red/settings.js
+npm install @node-red-contrib-themes/theme-collection &>/dev/null
+sed -i "{s/theme: ".*"/theme: '${THEME}',/g}" /root/.node-red/settings.js
+systemctl restart nodered
+msg_ok "Installed ${THEME} Theme"
+exit
+fi
+}
 
-msg_info "Creating Service"
-service_path="/etc/systemd/system/nodered.service"
-echo "[Unit]
-Description=Node-RED
-After=syslog.target network.target
+start
+build_container
+description
 
-[Service]
-ExecStart=/usr/bin/node-red --max-old-space-size=128 -v
-Restart=on-failure
-KillSignal=SIGINT
-
-SyslogIdentifier=node-red
-StandardOutput=syslog
-
-WorkingDirectory=/root/
-User=root
-Group=root
-
-[Install]
-WantedBy=multi-user.target" >$service_path
-$STD systemctl enable --now nodered.service
-msg_ok "Created Service"
-
-motd_ssh
-customize
-
-msg_info "Cleaning up"
-$STD apt-get -y autoremove
-$STD apt-get -y autoclean
-msg_ok "Cleaned"
+msg_ok "Completed Successfully!\n"
+echo -e "${APP} should be reachable by going to the following URL.
+         ${BL}http://${IP}:1880${CL} \n"
