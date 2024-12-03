@@ -1,56 +1,95 @@
-#I didn't create this out of fun. In fact I hate the premisis I had the create this at all to mask my utter stupidity/lack of undertstanding with LXC containers. 
-  #!/bin/bash
+#!/usr/bin/env bash
+source <(curl -s https://raw.githubusercontent.com/tteck/Proxmox/main/misc/build.func)
+# Copyright (c) 2021-2024 tteck
+# Author: tteck (tteckster)
+# License: MIT
+# https://github.com/tteck/Proxmox/raw/main/LICENSE
 
-set -e
+function header_info {
+clear
+cat <<"EOF"
+    _   __          __        ____           __
+   / | / /___  ____/ /__     / __ \___  ____/ /
+  /  |/ / __ \/ __  / _ \   / /_/ / _ \/ __  / 
+ / /|  / /_/ / /_/ /  __/  / _, _/  __/ /_/ /  
+/_/ |_/\____/\__,_/\___/  /_/ |_|\___/\__,_/   
+ 
+EOF
+}
+header_info
+echo -e "Loading..."
+APP="Node-Red"
+var_disk="4"
+var_cpu="1"
+var_ram="1024"
+var_os="debian"
+var_version="12"
+variables
+color
+catch_errors
 
-# Update and install prerequisites
-apt update && apt upgrade -y
-apt install -y curl wget sudo nano build-essential
+function default_settings() {
+  CT_TYPE="1"
+  PW=""
+  CT_ID=$NEXTID
+  HN=$NSAPP
+  DISK_SIZE="$var_disk"
+  CORE_COUNT="$var_cpu"
+  RAM_SIZE="$var_ram"
+  BRG="vmbr0"
+  NET="dhcp"
+  GATE=""
+  APT_CACHER=""
+  APT_CACHER_IP=""
+  DISABLEIP6="no"
+  MTU=""
+  SD=""
+  NS=""
+  MAC=""
+  VLAN=""
+  SSH="no"
+  VERB="no"
+  echo_default
+}
 
-# Install nvm (Node Version Manager)
-echo "Installing nvm..."
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
+function post_install() {
+  echo "Installing nvm..."
+  su - root -c "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash"
+  su - root -c "source ~/.bashrc && nvm install 22 && nvm alias default 22 && nvm use 22"
 
-# Source nvm into the current shell session
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+  echo "Installing Node-RED..."
+  su - root -c "source ~/.bashrc && npm install -g --unsafe-perm node-red"
 
-# Install and use Node.js v22
-echo "Installing Node.js v22..."
-nvm install 22
-nvm alias default 22
-nvm use 22
-
-# Verify installation
-node -v
-npm -v
-
-# Install Node-RED
-echo "Installing Node-RED..."
-npm install -g --unsafe-perm node-red
-
-# Create a service for Node-RED
-echo "Creating Node-RED service..."
-cat <<EOF | sudo tee /etc/systemd/system/node-red.service
+  echo "Creating Node-RED service..."
+  cat <<EOF | tee /etc/systemd/system/node-red.service
 [Unit]
 Description=Node-RED
 After=network.target
 
 [Service]
-Environment="PATH=$HOME/.nvm/versions/node/v22.11.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=$HOME/.nvm/versions/node/v22.11.0/bin/node-red
-WorkingDirectory=$HOME
-User=$USER
-Group=$USER
+Environment="PATH=/root/.nvm/versions/node/v22.11.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/root/.nvm/versions/node/v22.11.0/bin/node-red
+WorkingDirectory=/root
+User=root
+Group=root
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Reload systemd and enable Node-RED service
-sudo systemctl daemon-reload
-sudo systemctl enable node-red.service
-sudo systemctl start node-red.service
+  systemctl daemon-reload
+  systemctl enable node-red
+  systemctl start node-red
 
-echo "Node-RED installation complete. Visit http://<your-ip>:1880 to access the Node-RED editor."
+  echo "Node-RED installation complete. Visit http://${IP}:1880 to access the Node-RED editor."
+}
+
+start
+build_container
+description
+post_install
+
+msg_ok "Completed Successfully!\n"
+echo -e "${APP} should be reachable by going to the following URL.
+         ${BL}http://${IP}:1880${CL} \n"
